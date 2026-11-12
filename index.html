@@ -1,1 +1,584 @@
 
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>BMX PROJECT</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111815;color:white;font-family:Arial,sans-serif;touch-action:none}
+#game{position:fixed;inset:0}
+canvas{display:block;width:100%;height:100%}
+#hud{position:fixed;top:calc(env(safe-area-inset-top) + 10px);left:12px;right:12px;display:flex;justify-content:space-between;pointer-events:none;gap:8px}
+.panel{background:#07120fe0;border:1px solid #ffffff38;border-radius:15px;padding:10px 13px;backdrop-filter:blur(8px);font-size:12px}
+.brand{font-weight:900;letter-spacing:2px;font-size:15px}
+.stats{text-align:right;min-width:90px}
+.stats strong{font-size:22px}
+#hint{position:fixed;top:calc(env(safe-area-inset-top) + 83px);left:50%;transform:translateX(-50%);background:#07120fd9;border-radius:20px;padding:8px 13px;font-size:11px;white-space:nowrap;pointer-events:none}
+#controls{position:fixed;left:8px;right:8px;bottom:calc(env(safe-area-inset-bottom) + 10px);display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.btn{height:67px;border:1px solid #ffffff45;border-radius:14px;background:#10211bea;color:white;font-weight:800;font-size:clamp(9px,2.6vw,12px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:2px;touch-action:none;user-select:none;-webkit-user-select:none}
+.btn b{font-size:19px}
+.btn.go{background:#176047f2}
+.btn.down{background:#2c9569;transform:scale(.97)}
+#status{position:fixed;bottom:calc(env(safe-area-inset-bottom) + 84px);left:0;right:0;text-align:center;font-size:10px;color:#e7eee9b0;pointer-events:none}
+</style>
+</head>
+<body>
+
+<div id="game"></div>
+
+<div id="hud">
+ <div class="panel">
+  <div class="brand">BMX PROJECT</div>
+  <div id="load">ЗАГРУЗКА BMX…</div>
+ </div>
+ <div class="panel stats">
+  ОЧКИ<br>
+  <strong id="score">0</strong><br>
+  <span id="speed">0 км/ч</span>
+ </div>
+</div>
+
+<div id="hint">Удерживай ГАЗ · нажми ПРЫЖОК перед рампой</div>
+<div id="status">Вид от первого лица · мобильное управление</div>
+
+<div id="controls">
+ <button class="btn" data-key="left"><b>◀</b>ВЛЕВО</button>
+ <button class="btn" data-key="right"><b>▶</b>ВПРАВО</button>
+ <button class="btn" data-key="brake"><b>■</b>ТОРМОЗ</button>
+ <button class="btn go" data-key="gas"><b>▲</b>ГАЗ</button>
+ <button class="btn go" data-key="jump"><b>⬆</b>ПРЫЖОК</button>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+
+const root=document.querySelector('#game');
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x9fb7b5);
+scene.fog=new THREE.Fog(0x9fb7b5,45,125);
+
+const camera=new THREE.PerspectiveCamera(76,innerWidth/innerHeight,.1,180);
+camera.position.set(0,1.55,0);
+
+const renderer=new THREE.WebGLRenderer({
+ antialias:true,
+ powerPreference:'high-performance'
+});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.12;
+root.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xe8f5ff,0x555b55,2.0));
+
+const sun=new THREE.DirectionalLight(0xffe8c9,2.5);
+sun.position.set(-12,22,12);
+sun.castShadow=true;
+sun.shadow.mapSize.set(1024,1024);
+scene.add(sun);
+
+const mat=(c,r=.75,m=0)=>new THREE.MeshStandardMaterial({
+ color:c,roughness:r,metalness:m
+});
+
+const asphalt=mat(0x454d4a);
+const wood=mat(0x98603e);
+const steel=mat(0x697477,.4,.7);
+const rail=mat(0xb6c0c0,.3,.75);
+
+function box(x,y,z,sx,sy,sz,m){
+ const o=new THREE.Mesh(
+  new THREE.BoxGeometry(sx,sy,sz),m
+ );
+ o.position.set(x,y,z);
+ o.receiveShadow=true;
+ o.castShadow=true;
+ scene.add(o);
+ return o;
+}
+
+const floor=new THREE.Mesh(
+ new THREE.PlaneGeometry(180,100),asphalt
+);
+floor.rotation.x=-Math.PI/2;
+floor.position.set(24,-.12,0);
+floor.receiveShadow=true;
+scene.add(floor);
+
+// RAMPA
+
+const ramp={x:8,z:0,w:9,len:7,h:3.3};
+
+function rampY(x){
+ const t=THREE.MathUtils.clamp(
+  (x-ramp.x)/ramp.len,0,1
+ );
+ return ramp.h*(1-Math.sqrt(Math.max(0,1-t*t)));
+}
+
+function buildQuarter(){
+ const p=[],idx=[],nx=60,nz=16;
+
+ for(let j=0;j<=nz;j++){
+  for(let i=0;i<=nx;i++){
+   const xx=ramp.len*i/nx;
+   const zz=-ramp.w/2+ramp.w*j/nz;
+   p.push(
+    ramp.x+xx,
+    rampY(ramp.x+xx),
+    ramp.z+zz
+   );
+  }
+ }
+
+ for(let j=0;j<nz;j++){
+  for(let i=0;i<nx;i++){
+   const a=j*(nx+1)+i;
+   const b=a+1;
+   const c=a+nx+1;
+   const d=c+1;
+   idx.push(a,c,b,b,c,d);
+  }
+ }
+
+ const g=new THREE.BufferGeometry();
+ g.setAttribute(
+  'position',
+  new THREE.Float32BufferAttribute(p,3)
+ );
+ g.setIndex(idx);
+ g.computeVertexNormals();
+
+ const surf=new THREE.Mesh(
+  g,
+  new THREE.MeshStandardMaterial({
+   color:0x98603e,
+   roughness:.8,
+   side:THREE.DoubleSide
+  })
+ );
+ surf.castShadow=true;
+ surf.receiveShadow=true;
+ scene.add(surf);
+
+ for(const side of [-1,1]){
+  const shape=new THREE.Shape();
+  shape.moveTo(ramp.x,0);
+
+  for(let i=0;i<=40;i++){
+   const x=ramp.x+ramp.len*i/40;
+   shape.lineTo(x,rampY(x));
+  }
+
+  shape.lineTo(ramp.x+ramp.len,0);
+  shape.closePath();
+
+  const geo=new THREE.ShapeGeometry(shape,40);
+
+  const panel=new THREE.Mesh(
+   geo,
+   new THREE.MeshStandardMaterial({
+    color:0x596267,
+    metalness:.55,
+    roughness:.55,
+    side:THREE.DoubleSide
+   })
+  );
+
+  panel.position.z=side*ramp.w/2;
+  panel.castShadow=true;
+  scene.add(panel);
+ }
+
+ box(
+  ramp.x+ramp.len+.65,.10,0,
+  1.3,.2,ramp.w,steel
+ );
+
+ for(const s of [-1,1]){
+  const railBar=box(
+   ramp.x+ramp.len+.7,
+   ramp.h+.35,
+   s*ramp.w*.47,
+   1.2,.07,.07,rail
+  );
+  railBar.rotation.z=0;
+ }
+}
+
+buildQuarter();
+
+// SMALL RAMP
+
+const kicker={
+ x:24,z:-4,w:4,len:4,h:1.25
+};
+
+function kickerY(x){
+ const t=THREE.MathUtils.clamp(
+  (x-kicker.x)/kicker.len,0,1
+ );
+ return kicker.h*t;
+}
+
+{
+ const p=[],idx=[],nx=24,nz=10;
+
+ for(let j=0;j<=nz;j++){
+  for(let i=0;i<=nx;i++){
+   p.push(
+    kicker.x+kicker.len*i/nx,
+    kickerY(kicker.x+kicker.len*i/nx),
+    kicker.z-kicker.w/2+kicker.w*j/nz
+   );
+  }
+ }
+
+ for(let j=0;j<nz;j++){
+  for(let i=0;i<nx;i++){
+   const a=j*(nx+1)+i;
+   idx.push(
+    a,a+nx+1,a+1,
+    a+1,a+nx+1,a+nx+2
+   );
+  }
+ }
+
+ const g=new THREE.BufferGeometry();
+ g.setAttribute(
+  'position',
+  new THREE.Float32BufferAttribute(p,3)
+ );
+ g.setIndex(idx);
+ g.computeVertexNormals();
+
+ const o=new THREE.Mesh(
+  g,
+  new THREE.MeshStandardMaterial({
+   color:0xb77a4b,
+   side:THREE.DoubleSide
+  })
+ );
+ o.castShadow=true;
+ scene.add(o);
+}
+
+// PARK
+
+for(let i=0;i<12;i++){
+ box(-5+i*4,.015,-12,1.5,.025,.09,mat(0xb9c1b9));
+}
+
+for(const s of [-1,1]){
+ box(13,.55,s*13,40,1,.22,steel);
+
+ for(let i=0;i<20;i++){
+  box(-6+i*2,1.0,s*13,.045,1,.045,rail);
+ }
+}
+
+// BMX MODEL
+
+const cockpit=new THREE.Group();
+
+cockpit.position.set(0,-.48,-1.12);
+cockpit.rotation.y=Math.PI/2;
+cockpit.scale.setScalar(1.0);
+
+camera.add(cockpit);
+scene.add(camera);
+
+let wheelSpin=null;
+
+new GLTFLoader().load(
+ './BMX_POV_Front_Model.glb',
+
+ gltf=>{
+  const model=gltf.scene;
+
+  model.traverse(o=>{
+   if(o.isMesh){
+    o.castShadow=true;
+    o.receiveShadow=true;
+   }
+  });
+
+  cockpit.add(model);
+
+  const wheelNames=[
+   'Front_tire',
+   'Polished_rim',
+   'Inner_rim_detail',
+   'Front_hub',
+   'Spoke_',
+   'Axle_cap_'
+  ];
+
+  wheelSpin=new THREE.Group();
+  wheelSpin.position.set(.48,-.62,0);
+  model.add(wheelSpin);
+
+  model.updateMatrixWorld(true);
+
+  const parts=[];
+
+  model.traverse(o=>{
+   if(
+    o.isMesh &&
+    wheelNames.some(n=>o.name.startsWith(n))
+   ){
+    parts.push(o);
+   }
+  });
+
+  for(const part of parts){
+   wheelSpin.attach(part);
+  }
+
+  document.querySelector('#load').textContent=
+   '3D BMX ЗАГРУЖЕН';
+ },
+
+ undefined,
+
+ err=>{
+  console.error(err);
+  document.querySelector('#load').textContent=
+   'ОШИБКА ЗАГРУЗКИ GLB';
+ }
+);
+
+// CONTROLS
+
+const held={
+ left:false,
+ right:false,
+ brake:false,
+ gas:false
+};
+
+let jumpTap=false;
+
+document.querySelectorAll('[data-key]').forEach(btn=>{
+ const k=btn.dataset.key;
+
+ const down=e=>{
+  e.preventDefault();
+  btn.classList.add('down');
+
+  if(k==='jump'){
+   jumpTap=true;
+  }else{
+   held[k]=true;
+  }
+ };
+
+ const up=e=>{
+  e.preventDefault();
+  btn.classList.remove('down');
+
+  if(k!=='jump'){
+   held[k]=false;
+  }
+ };
+
+ btn.addEventListener('pointerdown',down);
+ btn.addEventListener('pointerup',up);
+ btn.addEventListener('pointercancel',up);
+ btn.addEventListener('lostpointercapture',up);
+});
+
+// PHYSICS
+
+let x=-8;
+let z=0;
+let speed=0;
+let y=0;
+let vy=0;
+let heading=0;
+let steer=0;
+let air=false;
+let score=0;
+
+function groundHeight(px,pz){
+
+ if(
+  px>=ramp.x &&
+  px<=ramp.x+ramp.len &&
+  Math.abs(pz)<ramp.w/2-.22
+ ){
+  return rampY(px);
+ }
+
+ if(
+  px>=kicker.x &&
+  px<=kicker.x+kicker.len &&
+  Math.abs(pz-kicker.z)<kicker.w/2-.2
+ ){
+  return kickerY(px);
+ }
+
+ return 0;
+}
+
+function blocked(px,pz){
+
+ if(
+  pz<-14 ||
+  pz>14 ||
+  px<-15 ||
+  px>45
+ ){
+  return true;
+ }
+
+ if(
+  px>ramp.x &&
+  px<ramp.x+ramp.len &&
+  Math.abs(pz)>ramp.w/2-.35 &&
+  Math.abs(pz)<ramp.w/2+.3
+ ){
+  return true;
+ }
+
+ return false;
+}
+
+// GAME LOOP
+
+let last=performance.now();
+
+function frame(now){
+
+ requestAnimationFrame(frame);
+
+ const dt=Math.min(
+  (now-last)/1000,
+  .035
+ );
+
+ last=now;
+
+ if(held.gas){
+  speed=Math.min(12,speed+4.0*dt);
+ }else{
+  speed=Math.max(0,speed-.28*dt);
+ }
+
+ if(held.brake){
+  speed=Math.max(0,speed-8*dt);
+ }
+
+ const turn=
+  (held.left?1:0)-
+  (held.right?1:0);
+
+ steer=THREE.MathUtils.damp(
+  steer,turn,3.8,dt
+ );
+
+ heading+=steer*(.08+speed*.027)*dt;
+
+ const nx=x+Math.cos(heading)*speed*dt;
+ const nz=z+Math.sin(heading)*speed*dt;
+
+ if(!blocked(nx,nz)){
+  x=nx;
+  z=nz;
+ }else{
+  speed=0;
+ }
+
+ const floorY=groundHeight(x,z);
+
+ if(jumpTap&&!air&&speed>.4){
+  vy=6.8;
+  air=true;
+ }
+
+ jumpTap=false;
+
+ if(air){
+  vy-=10*dt;
+  y+=vy*dt;
+
+  if(y<=floorY){
+   y=floorY;
+   vy=0;
+   air=false;
+
+   score+=Math.round(speed*10);
+
+   document.querySelector('#score').textContent=score;
+  }
+
+ }else{
+  y=floorY;
+ }
+
+ camera.position.set(x,1.48+y,z);
+ camera.rotation.set(0,-heading,0);
+
+ camera.rotateX(
+  THREE.MathUtils.damp(
+   camera.rotation.x,
+   air?-.035:0,
+   4,dt
+  )
+ );
+
+ cockpit.rotation.y=Math.PI/2+steer*.13;
+
+ cockpit.rotation.z=THREE.MathUtils.damp(
+  cockpit.rotation.z,
+  -steer*.025,
+  4,dt
+ );
+
+ if(wheelSpin){
+  wheelSpin.rotation.z-=speed*dt*2.1;
+ }
+
+ document.querySelector('#speed').textContent=
+  Math.round(speed*3.6)+' км/ч';
+
+ renderer.render(scene,camera);
+}
+
+requestAnimationFrame(frame);
+
+// SCREEN RESIZE
+
+function resize(){
+
+ camera.aspect=innerWidth/innerHeight;
+
+ camera.fov=innerHeight>innerWidth?76:68;
+
+ camera.updateProjectionMatrix();
+
+ renderer.setSize(innerWidth,innerHeight);
+
+ renderer.setPixelRatio(
+  Math.min(devicePixelRatio,1.5)
+ );
+}
+
+addEventListener('resize',resize);
+resize();
+
+</script>
+</body>
+</html>
+
