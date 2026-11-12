@@ -1,1 +1,153 @@
 
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>BMX PROJECT</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101714;color:#fff;font-family:Arial,sans-serif;touch-action:none}
+#game{position:fixed;inset:0}canvas{display:block}
+#hud{position:fixed;top:14px;left:14px;right:14px;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none}
+.panel{background:#07110dcc;border:1px solid #ffffff22;border-radius:14px;padding:10px 13px;backdrop-filter:blur(8px);font-size:13px;line-height:1.5}
+#title{font-weight:800;letter-spacing:2px;font-size:15px}#score{font-size:20px;font-weight:800}
+#hint{position:fixed;top:83px;left:50%;transform:translateX(-50%);background:#07110dbb;padding:8px 12px;border-radius:20px;font-size:12px;white-space:nowrap;color:#d8e6dc;pointer-events:none}
+#controls{position:fixed;left:0;right:0;bottom:18px;display:flex;justify-content:space-between;align-items:end;padding:0 16px;gap:12px}
+.cluster{display:flex;gap:9px;align-items:end}
+button{border:1px solid #ffffff38;background:#101d19d9;color:#fff;border-radius:18px;min-width:65px;height:64px;font-size:12px;font-weight:700;box-shadow:0 5px 18px #0006;touch-action:none}
+button.big{min-width:78px;height:78px;border-radius:22px;background:#174d37e8}
+button:active,button.down{background:#2d9c68;transform:scale(.96)}
+#footer{position:fixed;bottom:4px;left:0;right:0;text-align:center;font-size:10px;color:#c4d0c8a0;pointer-events:none}
+@media (orientation:portrait){#hint{top:78px}button{min-width:58px;height:60px}button.big{min-width:70px;height:70px}}
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="hud">
+  <div class="panel"><div id="title">BMX PROJECT</div><div>ПЕРВАЯ СБОРКА · 3D</div></div>
+  <div class="panel" style="text-align:right"><div>ОЧКИ</div><div id="score">0</div><div id="speed">0 км/ч</div></div>
+</div>
+<div id="hint">Удерживай «РАЗГОН», нажми «ПРЫЖОК» у рампы</div>
+<div id="controls">
+  <div class="cluster">
+    <button data-control="left">◀<br>НАКЛОН</button>
+    <button data-control="right">▶<br>НАКЛОН</button>
+  </div>
+  <div class="cluster">
+    <button data-control="brake">ТОРМОЗ</button>
+    <button class="big" data-control="pedal">РАЗГОН</button>
+    <button class="big" data-control="jump">ПРЫЖОК</button>
+  </div>
+</div>
+<div id="footer">BMX PROJECT · прототип управления</div>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+const root=document.querySelector('#game');
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x9bb4b4);
+scene.fog=new THREE.Fog(0x9bb4b4,35,115);
+const camera=new THREE.PerspectiveCamera(58,innerWidth/innerHeight,.1,180);
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.15;
+root.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xdceeff,0x53604c,2.0));
+const sun=new THREE.DirectionalLight(0xfff1d5,3.0);sun.position.set(-12,22,10);sun.castShadow=true;
+sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-35;sun.shadow.camera.right=35;sun.shadow.camera.top=35;sun.shadow.camera.bottom=-35;scene.add(sun);
+
+const mat=(color,rough=.65,metal=0)=>new THREE.MeshStandardMaterial({color,roughness:rough,metalness:metal});
+const asphalt=mat(0x454d4c), concrete=mat(0x858d89), dark=mat(0x202a29), metal=mat(0x9ba6a2,.28,.8);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(180,180),asphalt);ground.rotation.x=-Math.PI/2;ground.position.y=-.08;ground.receiveShadow=true;scene.add(ground);
+const slab=new THREE.Mesh(new THREE.BoxGeometry(42,.18,32),concrete);slab.position.set(8,-.01,0);slab.receiveShadow=true;slab.castShadow=true;scene.add(slab);
+
+function ramp(x,z,w,depth,height,rotation=0){
+ const shape=new THREE.Shape();shape.moveTo(0,0);shape.lineTo(depth,0);shape.lineTo(depth,height);
+ shape.quadraticCurveTo(depth*.18,height,0,0);
+ const geo=new THREE.ExtrudeGeometry(shape,{depth:w,bevelEnabled:false,steps:18,curveSegments:18});
+ const mesh=new THREE.Mesh(geo,concrete);mesh.rotation.y=rotation;mesh.position.set(x,.08,z-w/2);mesh.castShadow=true;mesh.receiveShadow=true;scene.add(mesh);
+ const lip=new THREE.Mesh(new THREE.BoxGeometry(.12,.12,w),metal);lip.position.set(x+depth,.08+height,z);lip.rotation.y=rotation;scene.add(lip);
+}
+ramp(9,-1,8,5,2.4);ramp(-5,7,7,4,1.8,Math.PI);
+function box(x,y,z,sx,sy,sz,material){const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),material);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;scene.add(m);return m}
+box(4,.42,-7,7,.75,.45,dark);
+box(16,.18,6,4,.36,2,concrete);
+for(let i=0;i<8;i++){const p=box(-15+i*4,.06,-13,1.7,.12,.18,mat(0x68736e));p.rotation.y=.08}
+
+const bike=new THREE.Group();scene.add(bike);
+const frameMat=mat(0x172d29,.3,.65), tireMat=mat(0x101313,.92), rimMat=mat(0xc4ceca,.25,.85), seatMat=mat(0x171b1a,.75);
+function cylBetween(parent,a,b,r,material,radial=10){
+ const A=new THREE.Vector3(...a),B=new THREE.Vector3(...b),d=new THREE.Vector3().subVectors(B,A);
+ const mesh=new THREE.Mesh(new THREE.CylinderGeometry(r,r,d.length(),radial),material);
+ mesh.position.copy(A).add(B).multiplyScalar(.5);mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize());mesh.castShadow=true;parent.add(mesh);return mesh;
+}
+const rear=new THREE.Vector3(-.78,.48,0),front=new THREE.Vector3(.82,.48,0),crank=new THREE.Vector3(-.12,.47,0),top=new THREE.Vector3(-.2,1.02,0),head=new THREE.Vector3(.48,.98,0),seat=new THREE.Vector3(-.48,1.12,0);
+function wheel(x){
+ const g=new THREE.Group();g.position.set(x,.48,0);bike.add(g);
+ const tire=new THREE.Mesh(new THREE.TorusGeometry(.48,.075,12,36),tireMat);tire.rotation.y=Math.PI/2;tire.castShadow=true;g.add(tire);
+ const rim=new THREE.Mesh(new THREE.TorusGeometry(.405,.018,8,36),rimMat);rim.rotation.y=Math.PI/2;g.add(rim);
+ for(let i=0;i<12;i++){const a=i*Math.PI/6;const y=Math.cos(a)*.39,z=Math.sin(a)*.39;cylBetween(g,[0,0,0],[0,y,z],.006,metal,5)}
+ const hub=new THREE.Mesh(new THREE.CylinderGeometry(.055,.055,.16,12),metal);hub.rotation.x=Math.PI/2;g.add(hub);
+ return g;
+}
+const rw=wheel(-.78),fw=wheel(.82);
+cylBetween(bike,rear.toArray(),crank.toArray(),.045,frameMat);
+cylBetween(bike,crank.toArray(),top.toArray(),.045,frameMat);
+cylBetween(bike,top.toArray(),rear.toArray(),.045,frameMat);
+cylBetween(bike,top.toArray(),head.toArray(),.045,frameMat);
+cylBetween(bike,head.toArray(),crank.toArray(),.045,frameMat);
+cylBetween(bike,head.toArray(),front.toArray(),.035,metal);
+cylBetween(bike,seat.toArray(),top.toArray(),.035,metal);
+cylBetween(bike,seat.toArray(),[-.38,1.2,0],.045,seatMat);
+cylBetween(bike,[.45,1.12,0],[.45,1.36,0],.035,metal);
+cylBetween(bike,[.15,1.36,0],[.76,1.36,0],.035,metal);
+cylBetween(bike,[.15,1.36,0],[.15,1.43,0],.035,metal);
+cylBetween(bike,[.76,1.36,0],[.76,1.43,0],.035,metal);
+cylBetween(bike,[-.12,.47,-.2],[-.12,.47,.2],.045,metal);
+cylBetween(bike,[-.12,.47,0],[-.12,.2,.22],.025,metal);
+cylBetween(bike,[-.12,.47,0],[-.12,.74,-.22],.025,metal);
+cylBetween(bike,[-.12,.2,.22],[-.32,.2,.22],.035,seatMat);
+cylBetween(bike,[-.12,.74,-.22],[.08,.74,-.22],.035,seatMat);
+
+bike.position.set(-9,.1,0);
+const shadow=new THREE.Mesh(new THREE.CircleGeometry(.8,24),new THREE.MeshBasicMaterial({color:0x15201d,transparent:true,opacity:.22}));shadow.rotation.x=-Math.PI/2;shadow.position.y=.015;scene.add(shadow);
+
+const state={speed:0,vy:0,air:false,tilt:0,rotation:0,score:0,groundY:.1};
+const held={};let last=performance.now(),distance=0;
+document.querySelectorAll('button[data-control]').forEach(btn=>{
+ const key=btn.dataset.control;
+ const down=e=>{e.preventDefault();held[key]=true;btn.classList.add('down');};
+ const up=e=>{e.preventDefault();held[key]=false;btn.classList.remove('down');};
+ btn.addEventListener('pointerdown',down);btn.addEventListener('pointerup',up);btn.addEventListener('pointercancel',up);btn.addEventListener('lostpointercapture',up);
+});
+function update(dt){
+ if(held.pedal)state.speed=Math.min(12,state.speed+5.2*dt);
+ else state.speed=Math.max(0,state.speed-1.0*dt);
+ if(held.brake)state.speed=Math.max(0,state.speed-9*dt);
+ if(held.left)state.tilt=Math.min(.48,state.tilt+2.5*dt);
+ else if(held.right)state.tilt=Math.max(-.48,state.tilt-2.5*dt);
+ else state.tilt*=Math.pow(.04,dt);
+ if(held.jump&&!state.air&&state.speed>1){state.vy=5.7;state.air=true;held.jump=false;document.querySelector('[data-control="jump"]').classList.remove('down')}
+ if(state.air){state.vy-=9.8*dt;bike.position.y+=state.vy*dt;bike.rotation.z+=state.tilt*dt*1.5;if(bike.position.y<=.1){bike.position.y=.1;state.vy=0;state.air=false;bike.rotation.z=0;state.score+=Math.round(state.speed*12);document.querySelector('#score').textContent=state.score}}
+ bike.position.x+=state.speed*dt*.72;
+ bike.rotation.x=state.tilt;
+ rw.rotation.x-=state.speed*dt*1.7;fw.rotation.x-=state.speed*dt*1.7;
+ if(bike.position.x>22){bike.position.x=-12;state.speed=0}
+ shadow.position.x=bike.position.x;shadow.position.z=bike.position.z;
+ const target=new THREE.Vector3(bike.position.x-5,3.5,7.5);
+ camera.position.lerp(target,1-Math.pow(.001,dt));camera.lookAt(bike.position.x+1,.9,0);
+ document.querySelector('#speed').textContent=Math.round(state.speed*3.6)+' км/ч';
+}
+function animate(now){requestAnimationFrame(animate);const dt=Math.min((now-last)/1000,.035);last=now;update(dt);renderer.render(scene,camera)}
+requestAnimationFrame(animate);
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.7))});
+</script>
+</body>
+</html>
+
