@@ -649,7 +649,7 @@ function frame(now){
  crankGroup.rotation.z+=speed*dt*1.5;
 
  // ТРИ РЕЖИМА КАМЕРЫ
- let desiredCamera;
+ let desiredCamera = new THREE.Vector3();
  if(cameraMode===0){
   camera.up.set(0,1,0);
   desiredCamera.set(x-1.8,2.25+y,z+6.2);
