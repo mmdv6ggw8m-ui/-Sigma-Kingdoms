@@ -1,1 +1,700 @@
 
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>BMX PROJECT — OPEN CITY</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111815;color:white;font-family:Arial,sans-serif;touch-action:none}
+#game{position:fixed;inset:0}
+canvas{display:block;width:100%;height:100%}
+#hud{position:fixed;top:calc(env(safe-area-inset-top) + 10px);left:12px;right:12px;display:flex;justify-content:space-between;pointer-events:none;gap:8px}
+.panel{background:#07120fe0;border:1px solid #ffffff38;border-radius:15px;padding:10px 13px;backdrop-filter:blur(8px);font-size:12px}
+.brand{font-weight:900;letter-spacing:2px;font-size:15px}
+.stats{text-align:right;min-width:90px}
+.stats strong{font-size:22px}
+#hint{position:fixed;top:calc(env(safe-area-inset-top) + 83px);left:50%;transform:translateX(-50%);background:#07120fd9;border-radius:20px;padding:8px 13px;font-size:11px;white-space:nowrap;pointer-events:none}
+#cameraBtn{
+ position:fixed;top:calc(env(safe-area-inset-top) + 82px);right:14px;
+ width:43px;height:43px;border-radius:50%;
+ border:1px solid #ffffff65;background:#07120fe8;color:white;
+ display:flex;align-items:center;justify-content:center;
+ z-index:10;backdrop-filter:blur(8px);padding:0;
+ box-shadow:0 3px 12px #0006;touch-action:manipulation;
+}
+#cameraBtn:active{transform:scale(.92);background:#176047}
+#cameraBtn svg{width:23px;height:23px;display:block}
+#cameraLabel{position:fixed;top:calc(env(safe-area-inset-top) + 132px);right:10px;background:#07120fd9;padding:5px 8px;border-radius:9px;font-size:9px;pointer-events:none;z-index:9}
+#controls{position:fixed;left:8px;right:8px;bottom:calc(env(safe-area-inset-bottom) + 10px);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.btn{height:57px;border:1px solid #ffffff45;border-radius:14px;background:#10211bea;color:white;font-weight:800;font-size:clamp(10px,2.8vw,12px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:2px;touch-action:none;user-select:none;-webkit-user-select:none}
+.btn b{font-size:19px}
+.btn.go{background:#176047f2}
+.btn.down{background:#2c9569;transform:scale(.97)}
+#status{position:fixed;bottom:calc(env(safe-area-inset-bottom) + 133px);left:0;right:0;text-align:center;font-size:10px;color:#e7eee9b0;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="hud">
+ <div class="panel">
+  <div class="brand">BMX PROJECT</div>
+  <div id="load">СОЗДАНИЕ ГОРОДА…</div>
+ </div>
+ <div class="panel stats">
+  ОЧКИ<br><strong id="score">0</strong><br>
+  <span id="speed">0 км/ч</span>
+ </div>
+</div>
+
+<div id="hint">ГАЗ — вперёд · НАЗАД — задний ход</div>
+
+<button id="cameraBtn" aria-label="Переключить камеру" title="Переключить камеру">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M14 4H10L8.5 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.5L14 4Z"/>
+  <circle cx="12" cy="13" r="3.5"/>
+ </svg>
+</button>
+<div id="cameraLabel">СБОКУ</div>
+
+<div id="status">BMX · OPEN CITY DISTRICT</div>
+
+<div id="controls">
+ <button class="btn" data-key="left"><b>◀</b>ВЛЕВО</button>
+ <button class="btn" data-key="right"><b>▶</b>ВПРАВО</button>
+ <button class="btn" data-key="brake"><b>■</b>ТОРМОЗ</button>
+ <button class="btn go" data-key="gas"><b>▲</b>ГАЗ</button>
+ <button class="btn" data-key="jump"><b>⬆</b>ПРЫЖОК</button>
+ <button class="btn" data-key="back"><b>▼</b>НАЗАД</button>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+const root=document.querySelector('#game');
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x9bb8c5);
+scene.fog=new THREE.Fog(0x9bb8c5,100,270);
+
+const camera=new THREE.PerspectiveCamera(52,innerWidth/innerHeight,.1,350);
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.25));
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.12;
+root.appendChild(renderer.domElement);
+
+// СВЕТ
+scene.add(new THREE.HemisphereLight(0xe8f5ff,0x586052,2));
+const sun=new THREE.DirectionalLight(0xffe8c9,2.7);
+sun.position.set(-45,75,35);
+sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-90;
+sun.shadow.camera.right=90;
+sun.shadow.camera.top=90;
+sun.shadow.camera.bottom=-90;
+sun.shadow.camera.near=1;
+sun.shadow.camera.far=220;
+sun.shadow.bias=-0.0003;
+scene.add(sun);
+
+const sunBall=new THREE.Mesh(
+ new THREE.SphereGeometry(5,16,12),
+ new THREE.MeshBasicMaterial({color:0xffe5b0})
+);
+sunBall.position.set(-100,100,-130);
+scene.add(sunBall);
+
+// МАТЕРИАЛЫ
+const mat=(c,r=.7,m=.05)=>new THREE.MeshStandardMaterial({color:c,roughness:r,metalness:m});
+const frameMat=mat(0x171d20,.27,.85);
+const black=mat(0x090b0d,.8,.05);
+const rubber=mat(0x101214,.9,.02);
+const metal=mat(0xaeb9bc,.28,.85);
+const chrome=mat(0xd3dddd,.2,.9);
+const accent=mat(0x248c67,.3,.65);
+const seatMat=mat(0x17191b,.65,.1);
+const asphalt=mat(0x454d4a,.95,0);
+const concrete=mat(0x858984,.95,0);
+const roadMat=mat(0x303638,.95,0);
+const whiteLine=mat(0xd9ded8,.8,0);
+const yellowLine=mat(0xe8c65b,.8,0);
+const wood=mat(0x98603e,.8,.05);
+const rampSide=mat(0x62432f,.85,.05);
+const rampEdge=mat(0xd4b18a,.65,.1);
+
+function mesh(parent,geo,material,x=0,y=0,z=0){
+ const o=new THREE.Mesh(geo,material);
+ o.position.set(x,y,z);
+ o.castShadow=true;
+ o.receiveShadow=true;
+ parent.add(o);
+ return o;
+}
+function tube(parent,a,b,r,material,r2=r){
+ const start=new THREE.Vector3(...a);
+ const end=new THREE.Vector3(...b);
+ const direction=new THREE.Vector3().subVectors(end,start);
+ const length=direction.length();
+ const o=mesh(parent,new THREE.CylinderGeometry(r2,r,length,10),material);
+ o.position.copy(start).add(end).multiplyScalar(.5);
+ o.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),direction.normalize());
+ return o;
+}
+function cylinderZ(parent,radius,length,material,x,y,z){
+ const o=mesh(parent,new THREE.CylinderGeometry(radius,radius,length,16),material,x,y,z);
+ o.rotation.x=Math.PI/2;
+ return o;
+}
+
+// КОЛЁСА BMX
+function makeWheel(parent,x,y,radius){
+ const wheel=new THREE.Group();
+ wheel.position.set(x,y,0);
+ parent.add(wheel);
+ mesh(wheel,new THREE.TorusGeometry(radius-.035,.065,12,56),rubber);
+ for(const side of [-1,1]){
+  const line=mesh(wheel,new THREE.TorusGeometry(radius-.075,.012,6,48),black);
+  line.position.z=side*.055;
+ }
+ mesh(wheel,new THREE.TorusGeometry(radius-.09,.018,8,56),chrome);
+ cylinderZ(wheel,.065,.17,metal,0,0,0);
+ cylinderZ(wheel,.025,.25,black,0,0,0);
+ for(const side of [-1,1]){
+  for(let i=0;i<24;i++){
+   const angle=i/24*Math.PI*2;
+   const next=(i+.5)/24*Math.PI*2;
+   tube(wheel,[0,0,side*.065],[
+    Math.cos(angle)*(radius-.09),Math.sin(angle)*(radius-.09),side*.055
+   ],.005,metal);
+   tube(wheel,[0,0,side*.065],[
+    Math.cos(next)*(radius-.09),Math.sin(next)*(radius-.09),-side*.055
+   ],.005,metal);
+  }
+ }
+ for(const side of [-1,1])cylinderZ(wheel,.075,.025,chrome,0,0,side*.095);
+ return wheel;
+}
+
+// ВЕЛОСИПЕД
+const bike=new THREE.Group();
+scene.add(bike);
+const rearWheel=makeWheel(bike,-.72,.43,.43);
+const rear=[-.72,.43,0],bottom=[-.06,.43,0];
+const seatJoint=[-.38,1.13,0],headTop=[.48,1.20,0],headBottom=[.52,.91,0];
+
+tube(bike,rear,bottom,.045,frameMat);
+tube(bike,bottom,seatJoint,.047,frameMat);
+tube(bike,seatJoint,rear,.043,frameMat);
+tube(bike,seatJoint,headTop,.048,frameMat);
+tube(bike,headTop,headBottom,.052,frameMat);
+tube(bike,headBottom,bottom,.046,frameMat);
+
+for(const s of [-1,1]){
+ tube(bike,[-.72,.43,s*.045],[-.38,1.13,s*.045],.027,frameMat);
+ tube(bike,[-.06,.43,s*.045],[-.38,1.13,s*.045],.027,frameMat);
+ tube(bike,[-.65,.48,s*.05],[-.39,1.10,s*.05],.009,accent);
+}
+cylinderZ(bike,.09,.19,black,-.06,.43,0);
+
+const chainring=new THREE.Group();
+chainring.position.set(-.06,.43,.14);
+bike.add(chainring);
+mesh(chainring,new THREE.TorusGeometry(.16,.018,8,40),chrome);
+mesh(chainring,new THREE.CircleGeometry(.12,32),black,0,0,-.012);
+for(let i=0;i<16;i++){
+ const a=i/16*Math.PI*2;
+ const tooth=mesh(chainring,new THREE.BoxGeometry(.035,.045,.025),metal,Math.cos(a)*.16,Math.sin(a)*.16,0);
+ tooth.rotation.z=a;
+}
+
+const crankGroup=new THREE.Group();
+crankGroup.position.set(-.06,.43,.18);
+bike.add(crankGroup);
+tube(crankGroup,[0,0,.10],[.20,.08,.10],.025,chrome);
+tube(crankGroup,[0,0,-.10],[-.20,-.08,-.10],.025,chrome);
+mesh(crankGroup,new THREE.BoxGeometry(.20,.055,.09),black,.20,.08,.10);
+mesh(crankGroup,new THREE.BoxGeometry(.20,.055,.09),black,-.20,-.08,-.10);
+tube(bike,[-.72,.43,.20],[-.06,.43,.20],.009,metal);
+tube(bike,[-.72,.43,-.20],[-.06,.43,-.20],.009,metal);
+
+for(const x of [-.72,.72]){
+ for(const s of [-1,1]){
+  cylinderZ(bike,.045,.24,metal,x,.43,s*.17);
+  cylinderZ(bike,.052,.025,black,x,.43,s*.30);
+ }
+}
+
+const steering=new THREE.Group();
+steering.position.set(.50,1.10,0);
+bike.add(steering);
+tube(steering,[0,.10,-.075],[.22,-.67,-.075],.045,chrome);
+tube(steering,[0,.10,.075],[.22,-.67,.075],.045,chrome);
+tube(steering,[.22,-.67,-.075],[.22,-.67,.075],.035,metal);
+tube(steering,[-.02,.10,-.10],[-.02,.10,.10],.035,metal);
+const frontWheel=makeWheel(steering,.22,-.67,.43);
+tube(steering,[0,.20,0],[0,.38,0],.045,metal);
+tube(steering,[0,.38,0],[-.10,.43,0],.045,chrome);
+tube(steering,[-.10,.43,-.40],[-.10,.43,.40],.037,chrome);
+tube(steering,[-.10,.43,-.40],[-.13,.48,-.53],.037,chrome);
+tube(steering,[-.13,.48,-.53],[-.13,.58,-.58],.037,chrome);
+tube(steering,[-.10,.43,.40],[-.13,.48,.53],.037,chrome);
+tube(steering,[-.13,.48,.53],[-.13,.58,.58],.037,chrome);
+
+for(const side of [-1,1]){
+ const grip=mesh(steering,new THREE.CylinderGeometry(.048,.048,.20,16),rubber,-.13,.58,side*.58);
+ grip.rotation.x=Math.PI/2;
+ cylinderZ(steering,.035,.025,black,-.13,.58,side*.69);
+}
+tube(bike,[-.38,1.12,0],[-.40,1.48,0],.035,chrome);
+const saddle=mesh(bike,new THREE.BoxGeometry(.42,.075,.20),seatMat,-.40,1.49,0);
+saddle.rotation.z=-.06;
+const saddleTop=mesh(bike,new THREE.BoxGeometry(.34,.025,.18),black,-.40,1.535,0);
+saddleTop.rotation.z=-.06;
+
+// БОЛЬШАЯ КАРТА
+const WORLD_X=270,WORLD_Z=220;
+mesh(scene,new THREE.PlaneGeometry(WORLD_X,WORLD_Z),asphalt,0,-.16,0).rotation.x=-Math.PI/2;
+
+const grass=mat(0x526b4c,.98,0);
+const grass2=mat(0x617752,.98,0);
+for(const x of [-100,-50,50,100]){
+ for(const z of [-80,-40,40,80]){
+  if(Math.abs(x)<20&&Math.abs(z)<20)continue;
+  mesh(scene,new THREE.PlaneGeometry(34,25),grass,x,-.145,z).rotation.x=-Math.PI/2;
+ }
+}
+
+// ДОРОЖНАЯ СЕТЬ
+function roadX(z,width=13){
+ mesh(scene,new THREE.PlaneGeometry(WORLD_X,width),roadMat,0,-.115,z).rotation.x=-Math.PI/2;
+}
+function roadZ(x,width=13){
+ mesh(scene,new THREE.PlaneGeometry(width,WORLD_Z),roadMat,x,-.113,0).rotation.x=-Math.PI/2;
+}
+[-95,-55,-24,24,55,95].forEach(z=>roadX(z));
+[-115,-65,-25,25,65,115].forEach(x=>roadZ(x));
+
+for(const z of [-95,-55,-24,24,55,95]){
+ for(let x=-125;x<130;x+=8)mesh(scene,new THREE.BoxGeometry(3,.025,.12),yellowLine,x,-.085,z);
+}
+for(const x of [-115,-65,-25,25,65,115]){
+ for(let z=-105;z<110;z+=8)mesh(scene,new THREE.BoxGeometry(.12,.025,3),whiteLine,x,-.083,z);
+}
+
+// ПЕШЕХОДНЫЕ ПЕРЕХОДЫ
+function crosswalk(x,z,vertical=false){
+ for(let i=-4;i<=4;i++){
+  if(vertical)mesh(scene,new THREE.BoxGeometry(5,.025,.55),whiteLine,x+i*.75,-.08,z);
+  else mesh(scene,new THREE.BoxGeometry(.55,.025,5),whiteLine,x,-.08,z+i*.75);
+ }
+}
+for(const x of [-65,-25,25,65,115]){
+ for(const z of [-55,-24,24,55])crosswalk(x,z,true);
+}
+for(const z of [-95,-55,24,55,95]){
+ for(const x of [-65,-25,25,65])crosswalk(x,z,false);
+}
+
+// ТРОТУАРЫ
+for(const z of [-103,-47,-32,-16,16,32,47,103])
+ mesh(scene,new THREE.BoxGeometry(WORLD_X,.18,1.7),concrete,0,-.04,z);
+for(const x of [-123,-73,-57,-33,-17,17,33,57,73,123])
+ mesh(scene,new THREE.BoxGeometry(1.7,.18,WORLD_Z),concrete,x,-.04,0);
+
+// РАМПЫ И СКЕЙТПАРК
+function makeRampSide(x,len,z,curveFn,material){
+ const shape=new THREE.Shape();
+ shape.moveTo(x,0);
+ for(let i=0;i<=32;i++){
+  const px=x+len*i/32;
+  shape.lineTo(px,curveFn(px));
+ }
+ shape.lineTo(x+len,0);
+ shape.lineTo(x,0);
+ const geo=new THREE.ExtrudeGeometry(shape,{depth:.16,bevelEnabled:true,bevelSegments:2,bevelSize:.02,bevelThickness:.02});
+ mesh(scene,geo,material,0,0,z);
+ const points=[];
+ for(let i=0;i<=32;i++){
+  const px=x+len*i/32;
+  points.push(new THREE.Vector3(px,curveFn(px)+.08,z+.08));
+ }
+ mesh(scene,new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points),32,.04,8,false),rampEdge);
+}
+const ramp={x:8,z:0,w:9,len:7,h:3.3};
+function rampY(x){
+ const t=THREE.MathUtils.clamp((x-ramp.x)/ramp.len,0,1);
+ return ramp.h*(1-Math.sqrt(Math.max(0,1-t*t)));
+}
+{
+ const p=[],idx=[],nx=50,nz=12;
+ for(let j=0;j<=nz;j++){
+  for(let i=0;i<=nx;i++){
+   const xx=ramp.x+ramp.len*i/nx,zz=-ramp.w/2+ramp.w*j/nz;
+   p.push(xx,rampY(xx),ramp.z+zz);
+  }
+ }
+ for(let j=0;j<nz;j++)for(let i=0;i<nx;i++){
+  const a=j*(nx+1)+i;
+  idx.push(a,a+nx+1,a+1,a+1,a+nx+1,a+nx+2);
+ }
+ const g=new THREE.BufferGeometry();
+ g.setAttribute('position',new THREE.Float32BufferAttribute(p,3));
+ g.setIndex(idx);g.computeVertexNormals();
+ const surf=mesh(scene,g,wood);surf.material.side=THREE.DoubleSide;
+ makeRampSide(ramp.x,ramp.len,-ramp.w/2-.08,rampY,rampSide);
+ makeRampSide(ramp.x,ramp.len,ramp.w/2-.08,rampY,rampSide);
+ mesh(scene,new THREE.BoxGeometry(.18,.25,ramp.w),rampSide,ramp.x,.12,0);
+}
+
+const kicker={x:24,z:-4,w:4,len:4,h:1.25};
+function kickerY(x){
+ const t=THREE.MathUtils.clamp((x-kicker.x)/kicker.len,0,1);
+ return kicker.h*t;
+}
+{
+ const p=[],idx=[],nx=20,nz=8;
+ for(let j=0;j<=nz;j++)for(let i=0;i<=nx;i++){
+  const xx=kicker.x+kicker.len*i/nx;
+  p.push(xx,kickerY(xx),kicker.z-kicker.w/2+kicker.w*j/nz);
+ }
+ for(let j=0;j<nz;j++)for(let i=0;i<nx;i++){
+  const a=j*(nx+1)+i;
+  idx.push(a,a+nx+1,a+1,a+1,a+nx+1,a+nx+2);
+ }
+ const g=new THREE.BufferGeometry();
+ g.setAttribute('position',new THREE.Float32BufferAttribute(p,3));
+ g.setIndex(idx);g.computeVertexNormals();
+ const surf=mesh(scene,g,wood);surf.material.side=THREE.DoubleSide;
+ makeRampSide(kicker.x,kicker.len,kicker.z-kicker.w/2-.08,kickerY,rampSide);
+ makeRampSide(kicker.x,kicker.len,kicker.z+kicker.w/2-.08,kickerY,rampSide);
+}
+
+// ОГРАЖДЕНИЯ СКЕЙТПАРКА
+for(const side of [-1,1]){
+ mesh(scene,new THREE.BoxGeometry(40,1,.22),metal,13,.55,side*13);
+ for(let i=0;i<20;i++)mesh(scene,new THREE.BoxGeometry(.045,1,.045),chrome,-6+i*2,1.05,side*13);
+}
+
+// ГОРОДСКИЕ ЗДАНИЯ
+const buildingMats=[
+ mat(0x777f87,.9,.1),mat(0x9b9c98,.9,.05),
+ mat(0x596b78,.75,.15),mat(0xb2a99b,.9,.05),
+ mat(0x46535b,.8,.1),mat(0x8a7770,.9,.05),
+ mat(0x9b886e,.9,.05),mat(0x667b78,.85,.05)
+];
+const windowMat=mat(0x9bc5d2,.3,.35);
+const darkWindow=mat(0x253b49,.4,.2);
+const roofMat=mat(0x41494c,.9,.05);
+const obstacles=[];
+
+function makeBuilding(x,z,w,h,d,index){
+ const group=new THREE.Group();
+ scene.add(group);
+ const material=buildingMats[index%buildingMats.length];
+ mesh(group,new THREE.BoxGeometry(w,h,d),material,x,h/2-.1,z);
+ mesh(group,new THREE.BoxGeometry(w+.2,.25,d+.2),roofMat,x,h-.12,z);
+ const rows=Math.min(12,Math.max(2,Math.floor(h/1.7)));
+ const cols=Math.min(8,Math.max(2,Math.floor(w/1.8)));
+ for(let row=0;row<rows;row++){
+  for(let col=0;col<cols;col++){
+   const wx=x-w/2+.65+col*(w-1.3)/Math.max(1,cols-1);
+   const wy=.9+row*(h-1.5)/rows;
+   mesh(group,new THREE.BoxGeometry(.52,.7,.035),(row+col+index)%4===0?windowMat:darkWindow,wx,wy,z+d/2+.025);
+   mesh(group,new THREE.BoxGeometry(.56,.035,.045),metal,wx,wy-.36,z+d/2+.05);
+  }
+ }
+ mesh(group,new THREE.BoxGeometry(1.1,1.9,.08),darkWindow,x,.95,z+d/2+.08);
+ if(index%2===0){
+  mesh(group,new THREE.BoxGeometry(1.2,.8,1),roofMat,x+.8,h+.3,z);
+  mesh(group,new THREE.CylinderGeometry(.1,.1,1.4,8),metal,x-w*.25,h+.7,z);
+ }
+ obstacles.push({x,z,hw:w/2+.8,hd:d/2+.8});
+}
+
+const lots=[
+ [-95,-78],[-50,-78],[50,-78],[95,-78],
+ [-95,-40],[-50,-40],[50,-40],[95,-40],
+ [-95,40],[-50,40],[50,40],[95,40],
+ [-95,78],[-50,78],[50,78],[95,78]
+];
+lots.forEach((p,i)=>{
+ const w=18+(i%3)*3,d=15+(i%2)*4,h=12+(i*7%28);
+ makeBuilding(p[0],p[1],w,h,d,i);
+});
+
+// МАГАЗИНЫ И ГАРАЖИ
+const shopMat=mat(0x8a9a91,.85,.05);
+for(let i=0;i<6;i++){
+ const x=-105+i*42,z=(i%2===0)?-8:8;
+ if(Math.abs(x)<35)continue;
+ mesh(scene,new THREE.BoxGeometry(12,5,9),shopMat,x,2.5,z);
+ mesh(scene,new THREE.BoxGeometry(12.2,.3,9.2),roofMat,x,5.05,z);
+ mesh(scene,new THREE.BoxGeometry(5,2.2,.08),darkWindow,x,2.2,z+4.55);
+ obstacles.push({x,z,hw:6.5,hd:5.5});
+}
+
+// ДЕРЕВЬЯ — БОЛЕЕ ПЛОТНАЯ ПОСАДКА
+const trunkMat=mat(0x59402e,.95,0);
+const leafMats=[
+ mat(0x315d43,.9,0),
+ mat(0x47734d,.9,0),
+ mat(0x668653,.9,0)
+];
+
+// Геометрия крон переиспользуется, чтобы не перегружать телефон
+const trunkGeo=new THREE.CylinderGeometry(.13,.20,1.6,7);
+const crownGeo1=new THREE.SphereGeometry(.85,9,7);
+const crownGeo2=new THREE.SphereGeometry(.65,9,7);
+const crownGeo3=new THREE.SphereGeometry(.68,9,7);
+const crownGeo4=new THREE.SphereGeometry(.48,9,7);
+
+function makeTree(x,z,scale=1,variant=0){
+ const group=new THREE.Group();
+ scene.add(group);
+ group.position.set(x,0,z);
+ group.scale.setScalar(scale);
+ mesh(group,trunkGeo,trunkMat,0,.8,0);
+ mesh(group,crownGeo1,leafMats[variant%3],0,2,0);
+ mesh(group,crownGeo2,leafMats[(variant+1)%3],-.45,2.2,.12);
+ mesh(group,crownGeo3,leafMats[(variant+2)%3],.4,2.35,-.1);
+ mesh(group,crownGeo4,leafMats[variant%3],-.05,2.75,.05);
+}
+
+// Деревья вдоль улиц: шаг стал меньше
+let treeIndex=0;
+for(let x=-120;x<=120;x+=9){
+ for(const z of [-16,16,-47,47,-103,103]){
+  if(Math.abs(x)<35&&Math.abs(z)<20)continue;
+  const scale=.82+(Math.abs(x+z)%4)*.09;
+  makeTree(x,z,scale,treeIndex++);
+ }
+}
+
+// Дополнительные небольшие зелёные зоны между кварталами
+for(const cx of [-82,82]){
+ for(const cz of [-8,8]){
+  for(let ix=-1;ix<=1;ix++){
+   for(let iz=-1;iz<=1;iz++){
+    const tx=cx+ix*5.5,tz=cz+iz*5.5;
+    const nearBuilding=obstacles.some(o=>Math.abs(tx-o.x)<o.hw+2&&Math.abs(tz-o.z)<o.hd+2);
+    const nearRoad=[-95,-55,-24,24,55,95].some(v=>Math.abs(tz-v)<7)||
+      [-115,-65,-25,25,65,115].some(v=>Math.abs(tx-v)<7);
+    if(!nearBuilding&&!nearRoad)makeTree(tx,tz,.72+(ix+iz+2)*.07,treeIndex++);
+   }
+  }
+ }
+}
+
+// ФОНАРИ
+const lampMat=mat(0x303b3e,.55,.7);
+const lampHead=mat(0xe4e1bd,.3,.15);
+function makeLamp(x,z,rot=0){
+ const group=new THREE.Group();
+ scene.add(group);
+ group.position.set(x,0,z);
+ group.rotation.y=rot;
+ tube(group,[0,0,0],[0,5.5,0],.07,lampMat);
+ tube(group,[0,5.5,0],[.9,5.8,0],.055,metal);
+ tube(group,[.9,5.8,0],[1.15,5.45,0],.04,metal);
+ mesh(group,new THREE.BoxGeometry(.5,.13,.32),lampHead,1.1,5.42,0);
+}
+for(let x=-110;x<=110;x+=28){
+ makeLamp(x,13);makeLamp(x,-13);
+}
+for(let z=-90;z<=90;z+=30){
+ makeLamp(13,z,Math.PI/2);makeLamp(-13,z,Math.PI/2);
+}
+
+// МАШИНЫ
+const carColors=[
+ mat(0x283c4a,.35,.55),mat(0x8b3430,.4,.45),
+ mat(0xc2c5c1,.35,.6),mat(0x303334,.4,.5)
+];
+function makeCar(x,z,colorIndex,rotation=0){
+ const car=new THREE.Group();
+ scene.add(car);
+ car.position.set(x,0,z);
+ car.rotation.y=rotation;
+ mesh(car,new THREE.BoxGeometry(4.2,.85,1.9),carColors[colorIndex%4],0,.65,0);
+ mesh(car,new THREE.BoxGeometry(2.2,.8,1.65),windowMat,-.15,1.35,0);
+ for(const wx of [-1.35,1.35]){
+  for(const wz of [-.95,.95]){
+   const wheel=mesh(car,new THREE.CylinderGeometry(.38,.38,.2,12),rubber,wx,.4,wz);
+   wheel.rotation.x=Math.PI/2;
+  }
+ }
+ obstacles.push({x,z,hw:rotation===0?2.4:1.4,hd:rotation===0?1.4:2.4});
+}
+for(let i=0;i<8;i++)makeCar(-105+i*28,18,i,i%2?0:Math.PI/2);
+
+// ДОРОЖНЫЕ ЗНАКИ
+const signMat=mat(0x176047,.45,.2);
+for(let i=0;i<8;i++){
+ const x=-105+i*30;
+ tube(scene,[x,0,11],[x,2.4,11],.045,metal);
+ mesh(scene,new THREE.BoxGeometry(1.4,.85,.12),signMat,x,2.7,11);
+}
+
+// УПРАВЛЕНИЕ
+const held={left:false,right:false,brake:false,gas:false,back:false};
+let jumpTap=false;
+document.querySelectorAll('[data-key]').forEach(btn=>{
+ const k=btn.dataset.key;
+ const down=e=>{
+  e.preventDefault();
+  btn.classList.add('down');
+  if(k==='jump')jumpTap=true;
+  else held[k]=true;
+ };
+ const up=e=>{
+  e.preventDefault();
+  btn.classList.remove('down');
+  if(k!=='jump')held[k]=false;
+ };
+ btn.addEventListener('pointerdown',down);
+ btn.addEventListener('pointerup',up);
+ btn.addEventListener('pointercancel',up);
+ btn.addEventListener('lostpointercapture',up);
+});
+
+// ФИЗИКА
+let x=-8,z=0,speed=0,y=0,vy=0;
+let heading=0,steer=0,air=false,score=0;
+
+function groundHeight(px,pz){
+ if(px>=ramp.x&&px<=ramp.x+ramp.len&&Math.abs(pz)<ramp.w/2-.22)return rampY(px);
+ if(px>=kicker.x&&px<=kicker.x+kicker.len&&Math.abs(pz-kicker.z)<kicker.w/2-.2)return kickerY(px);
+ return 0;
+}
+function blocked(px,pz){
+ if(px<-130||px>130||pz<-105||pz>105)return true;
+ for(const o of obstacles){
+  if(Math.abs(px-o.x)<o.hw+.65&&Math.abs(pz-o.z)<o.hd+.65)return true;
+ }
+ return false;
+}
+
+// ПЕРЕКЛЮЧЕНИЕ КАМЕРЫ
+let cameraMode=0;
+const cameraNames=['СБОКУ','СЗАДИ','СВЕРХУ'];
+const cameraBtn=document.querySelector('#cameraBtn');
+const cameraLabel=document.querySelector('#cameraLabel');
+
+cameraBtn.addEventListener('click',()=>{
+ cameraMode=(cameraMode+1)%3;
+ cameraLabel.textContent=cameraNames[cameraMode];
+});
+
+// КАМЕРА И ИГРОВОЙ ЦИКЛ
+const lookTarget=new THREE.Vector3();
+let last=performance.now();
+
+function frame(now){
+ requestAnimationFrame(frame);
+ const dt=Math.min((now-last)/1000,.035);
+ last=now;
+
+ if(held.gas)speed=Math.min(16,speed+4.5*dt);
+ if(held.back)speed=Math.max(-4,speed-3*dt);
+ if(held.brake){
+  if(speed>0)speed=Math.max(0,speed-9*dt);
+  else speed=Math.min(0,speed+9*dt);
+ }
+ if(!held.gas&&!held.back&&!held.brake)speed=THREE.MathUtils.damp(speed,0,.18,dt);
+
+ const turn=(held.left?1:0)-(held.right?1:0);
+ steer=THREE.MathUtils.damp(steer,turn,3.8,dt);
+ heading+=steer*(.08+Math.abs(speed)*.027)*dt;
+
+ const nx=x+Math.cos(heading)*speed*dt;
+ const nz=z+Math.sin(heading)*speed*dt;
+ if(!blocked(nx,z))x=nx;
+ else speed=0;
+ if(!blocked(x,nz))z=nz;
+ else speed=0;
+
+ const floorY=groundHeight(x,z);
+ if(jumpTap&&!air&&Math.abs(speed)>.4){
+  vy=6.8;
+  air=true;
+ }
+ jumpTap=false;
+
+ if(air){
+  vy-=10*dt;
+  y+=vy*dt;
+  if(y<=floorY){
+   y=floorY;vy=0;air=false;
+   score+=Math.round(Math.abs(speed)*10);
+   document.querySelector('#score').textContent=score;
+  }
+ }else y=floorY;
+
+ bike.position.set(x,y,z);
+ bike.rotation.y=-heading;
+ bike.rotation.z=THREE.MathUtils.damp(bike.rotation.z,-steer*.045,4,dt);
+ steering.rotation.y=-steer*.28;
+ rearWheel.rotation.z-=speed*dt*2.3;
+ frontWheel.rotation.z-=speed*dt*2.3;
+ crankGroup.rotation.z+=speed*dt*1.5;
+
+ // ТРИ РЕЖИМА КАМЕРЫ
+ let desiredCamera;
+ if(cameraMode===0){
+  camera.up.set(0,1,0);
+  desiredCamera.set(x-1.8,2.25+y,z+6.2);
+  lookTarget.set(x+.1,y+.76,z);
+ }else if(cameraMode===1){
+  camera.up.set(0,1,0);
+  desiredCamera.set(
+   x-Math.cos(heading)*7.5,
+   3.1+y,
+   z-Math.sin(heading)*7.5
+  );
+  lookTarget.set(
+   x+Math.cos(heading)*2,
+   y+.85,
+   z+Math.sin(heading)*2
+  );
+ }else{
+  camera.up.set(0,0,-1);
+  desiredCamera.set(x,y+16,z+.01);
+  lookTarget.set(x,y,z);
+ }
+
+ if(!frame.cameraPosition)frame.cameraPosition=new THREE.Vector3();
+ frame.cameraPosition.lerp(desiredCamera,1-Math.exp(-3.2*dt));
+ camera.position.copy(frame.cameraPosition);
+ camera.lookAt(lookTarget);
+
+ document.querySelector('#speed').textContent=Math.round(Math.abs(speed)*3.6)+' км/ч';
+ renderer.render(scene,camera);
+}
+
+requestAnimationFrame(frame);
+document.querySelector('#load').textContent='OPEN CITY · READY';
+
+// ИЗМЕНЕНИЕ РАЗМЕРА
+function resize(){
+ camera.aspect=innerWidth/innerHeight;
+ camera.fov=innerHeight>innerWidth?58:52;
+ camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+ renderer.setPixelRatio(Math.min(devicePixelRatio,1.25));
+}
+addEventListener('resize',resize);
+resize();
+</script>
+</body>
+</html>
+
